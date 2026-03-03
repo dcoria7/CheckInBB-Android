@@ -1,0 +1,43 @@
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Build files
+build/
+.gradle/
+local.properties
+captures/
+
+# Android Studio
+*.iml
+.idea/
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/gradle.xml
+.idea/assetWizardSettings.xml
+.idea/dictionaries
+.idea/libraries
+.idea/caches
+.idea/modules.xml
+.idea/*.iml
+
+# Keystore files (IMPORTANT: never commit)
+*.jks
+*.keystore
+
+# macOS
+.DS_Store
+.AppleDouble
+._*
+
+# Kotlin / Java
+*.class
+*.jar (except gradle wrapper)
+
+# Room schemas - opcional subir o no (decidir)
+# schemas/
+
+# Google Services
+google-services.json
