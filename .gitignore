@@ -36,6 +36,9 @@ captures/
 *.class
 *.jar (except gradle wrapper)
 
+# Java / Android heap dumps (archivos temporales de diagnóstico)
+*.hprof
+
 # Room schemas - opcional subir o no (decidir)
 # schemas/
 
