@@ -12,8 +12,16 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.util.Calendar
 import java.util.Date
 import javax.inject.Inject
+
+data class HistoryStats(
+    val totalCount: Int,
+    val todayCount: Int,
+    /** Mean hours between consecutive feedings (newest-first list), or null if fewer than 2 records. */
+    val averageIntervalHours: Double?
+)
 
 @HiltViewModel
 class FeedingViewModel @Inject constructor(
@@ -109,13 +117,48 @@ class FeedingViewModel @Inject constructor(
         return if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m"
     }
 
+    /** Stats for the full-history screen: total, today's count, average gap between consecutive feedings. */
+    fun historyStats(nowMs: Long = _currentTime.value): HistoryStats {
+        val records = _feedingRecords.value
+        val total = records.size
+        val cal = Calendar.getInstance()
+        cal.timeInMillis = nowMs
+        val todayY = cal.get(Calendar.YEAR)
+        val todayD = cal.get(Calendar.DAY_OF_YEAR)
+        var todayCount = 0
+        for (r in records) {
+            cal.timeInMillis = r.timestamp
+            if (cal.get(Calendar.YEAR) == todayY && cal.get(Calendar.DAY_OF_YEAR) == todayD) {
+                todayCount++
+            }
+        }
+        val avgHours: Double? = if (records.size < 2) {
+            null
+        } else {
+            var sumMs = 0L
+            for (i in 0 until records.size - 1) {
+                sumMs += records[i].timestamp - records[i + 1].timestamp
+            }
+            sumMs / (records.size - 1).toDouble() / 3_600_000.0
+        }
+        return HistoryStats(totalCount = total, todayCount = todayCount, averageIntervalHours = avgHours)
+    }
+
     // --- Actions ---
-    fun registerFeeding() {
-        viewModelScope.launch {
+    /**
+     * Registers a feeding now. Returns the new record id on success, or null on failure.
+     * Loading flag is managed internally for the duration of the operation.
+     */
+    suspend fun registerFeeding(): String? {
+        return try {
             _isLoading.value = true
-            repository.registerFeeding(_baby.value.id)
+            val id = repository.registerFeeding(_baby.value.id)
             _currentTime.value = System.currentTimeMillis()
             triggerWidgetUpdate()
+            id
+        } catch (_: Exception) {
+            null
+        } finally {
             _isLoading.value = false
         }
     }
@@ -123,11 +166,14 @@ class FeedingViewModel @Inject constructor(
     fun registerFeeding(timestamp: Long) {
         viewModelScope.launch {
             _isLoading.value = true
-            val maxTime = System.currentTimeMillis()
-            val safeTimestamp = if (timestamp > maxTime) maxTime else timestamp
-            repository.registerFeeding(_baby.value.id, safeTimestamp)
-            triggerWidgetUpdate()
-            _isLoading.value = false
+            try {
+                val maxTime = System.currentTimeMillis()
+                val safeTimestamp = if (timestamp > maxTime) maxTime else timestamp
+                repository.registerFeeding(_baby.value.id, safeTimestamp)
+                triggerWidgetUpdate()
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 

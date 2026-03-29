@@ -28,9 +28,14 @@ fun FeedingListRow(
     currentTimeMs: Long,
     isLatest: Boolean,
     intervalText: String?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    use12HourTime: Boolean = false,
+    showDateUnderTime: Boolean = true
 ) {
-    val timeFormatter = SimpleDateFormat("HH:mm", Locale.getDefault())
+    val timeFormatter = SimpleDateFormat(
+        if (use12HourTime) "h:mm a" else "HH:mm",
+        Locale.getDefault()
+    )
     val dateFormatter = SimpleDateFormat("dd MMM", Locale.getDefault())
     val formattedTime = timeFormatter.format(Date(record.timestamp))
     val formattedDate = dateFormatter.format(Date(record.timestamp))
@@ -109,8 +114,8 @@ fun FeedingListRow(
                 }
             }
 
-            // Date label (only for latest row, like iOS)
-            if (isLatest) {
+            // Date label (only for latest row on main screen; hidden when date is in section header)
+            if (isLatest && showDateUnderTime) {
                 Text(
                     text = formattedDate,
                     style = MaterialTheme.typography.labelSmall,

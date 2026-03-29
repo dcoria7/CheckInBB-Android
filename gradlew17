@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Ejecuta ./gradlew usando JDK 17 u 21 en macOS (evita fallo "25.0.1" con JDK 25).
+# Uso: ./gradlew17 :app:assembleRelease
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "$(uname -s)" == "Darwin" ]] && [[ -x /usr/libexec/java_home ]]; then
+  if CAND="$(/usr/libexec/java_home -v 17 2>/dev/null || /usr/libexec/java_home -v 21 2>/dev/null)"; then
+    export JAVA_HOME="$CAND"
+  fi
+fi
+exec "$ROOT/gradlew" "$@"

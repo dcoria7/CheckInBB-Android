@@ -23,7 +23,11 @@ class FeedingRepository @Inject constructor(
     fun getFeedingsFlow(babyId: String): Flow<List<FeedingRecord>> =
         dao.getFeedingsForBaby(babyId)
 
-    suspend fun registerFeeding(babyId: String, timestamp: Long = System.currentTimeMillis(), notes: String? = null) {
+    suspend fun registerFeeding(
+        babyId: String,
+        timestamp: Long = System.currentTimeMillis(),
+        notes: String? = null
+    ): String {
         val record = FeedingRecord(
             id = UUID.randomUUID().toString(),
             babyId = babyId,
@@ -32,6 +36,7 @@ class FeedingRepository @Inject constructor(
             lastModified = System.currentTimeMillis()
         )
         dao.insertFeeding(record)
+        return record.id
     }
 
     suspend fun deleteFeeding(record: FeedingRecord) {

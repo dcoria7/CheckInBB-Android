@@ -1,10 +1,27 @@
 package com.dc.checkinbb.ui.screens
 
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -12,6 +29,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -20,14 +39,19 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.dc.checkinbb.data.local.FeedingRecord
 import com.dc.checkinbb.ui.components.AnimatedBottleView
 import com.dc.checkinbb.ui.components.FeedingDetailSheet
+import com.dc.checkinbb.ui.components.ToastBanner
+import com.dc.checkinbb.ui.components.ToastBannerStyle
 import com.dc.checkinbb.ui.components.FeedingListRow
 import com.dc.checkinbb.ui.components.ManualEntryDialog
+import com.dc.checkinbb.ui.components.SwipeToDismissFeedingRow
 import com.dc.checkinbb.viewmodel.FeedingViewModel
 import com.dc.checkinbb.viewmodel.ThemeViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -35,7 +59,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun MainFeedingScreen(
     feedingViewModel: FeedingViewModel = hiltViewModel(),
-    themeViewModel: ThemeViewModel = hiltViewModel()
+    themeViewModel: ThemeViewModel = hiltViewModel(),
+    onOpenFullHistory: () -> Unit = {}
 ) {
     val records by feedingViewModel.feedingRecords.collectAsState()
     val currentTimeMs by feedingViewModel.currentTime.collectAsState()
@@ -52,6 +77,57 @@ fun MainFeedingScreen(
     val scope = rememberCoroutineScope()
     // Map from record.id to the record pending deletion (waiting for undo window)
     val pendingDeletion = remember { mutableStateMapOf<String, FeedingRecord>() }
+
+    var showingToast by remember { mutableStateOf(false) }
+    var toastText by remember { mutableStateOf("") }
+    var toastStyle by remember { mutableStateOf(ToastBannerStyle.Info) }
+    var toastDismissJob by remember { mutableStateOf<Job?>(null) }
+
+    var isRegisterCooldownActive by remember { mutableStateOf(false) }
+    var cooldownRecordId by remember { mutableStateOf<String?>(null) }
+    var cooldownJob by remember { mutableStateOf<Job?>(null) }
+
+    fun cancelRegisterCooldown() {
+        cooldownJob?.cancel()
+        cooldownJob = null
+        cooldownRecordId = null
+        isRegisterCooldownActive = false
+    }
+
+    LaunchedEffect(records.firstOrNull()?.id, isRegisterCooldownActive, cooldownRecordId) {
+        val latestId = records.firstOrNull()?.id ?: return@LaunchedEffect
+        if (isRegisterCooldownActive && cooldownRecordId != null && latestId != cooldownRecordId) {
+            cancelRegisterCooldown()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            toastDismissJob?.cancel()
+            cooldownJob?.cancel()
+        }
+    }
+
+    fun showToastBanner(text: String, style: ToastBannerStyle) {
+        toastDismissJob?.cancel()
+        toastText = text
+        toastStyle = style
+        showingToast = true
+        toastDismissJob = scope.launch {
+            delay(1800)
+            showingToast = false
+        }
+    }
+
+    fun startRegisterCooldown(latestRecordId: String?) {
+        cooldownJob?.cancel()
+        cooldownRecordId = latestRecordId
+        isRegisterCooldownActive = true
+        cooldownJob = scope.launch {
+            delay(60_000)
+            cancelRegisterCooldown()
+        }
+    }
 
     fun requestDelete(record: FeedingRecord) {
         pendingDeletion[record.id] = record
@@ -78,6 +154,7 @@ fun MainFeedingScreen(
     val progressValue = if (intervalMs == 0L) 0f else (timeSinceLast.toFloat() / intervalMs).coerceIn(0f, 1f)
     val hoursSince = timeSinceLast / 3_600_000.0
     val inWindow = hoursSince >= baby.feedingWindowMin && hoursSince <= baby.feedingWindowMax
+    val isOverdue = timeUntilNext <= 0L
 
     val formattedRemaining = run {
         val hours = (timeUntilNext / 3_600_000).toInt()
@@ -107,14 +184,18 @@ fun MainFeedingScreen(
             )
         }
     ) { padding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             // ── Top Card ──────────────────────────────────────────────────
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -129,12 +210,15 @@ fun MainFeedingScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Animated bottle
+                    // Animated bottle (size + overdue pulse aligned with iOS)
                     AnimatedBottleView(
                         fillLevel = progressValue,
                         primaryColor = MaterialTheme.colorScheme.primary,
                         secondaryColor = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.size(width = 80.dp, height = 160.dp)
+                        isOverdue = isOverdue,
+                        modifier = Modifier
+                            .padding(top = 20.dp)
+                            .size(width = 100.dp, height = 180.dp)
                     )
 
                     // Status text
@@ -189,28 +273,57 @@ fun MainFeedingScreen(
 
                     // Primary button
                     Button(
-                        onClick = { feedingViewModel.registerFeeding() },
-                        enabled = !isLoading,
+                        onClick = {
+                            scope.launch {
+                                val newId = feedingViewModel.registerFeeding()
+                                if (newId != null) {
+                                    showToastBanner("Toma registrada", ToastBannerStyle.Success)
+                                    startRegisterCooldown(newId)
+                                } else {
+                                    showToastBanner(
+                                        "No se pudo registrar la toma",
+                                        ToastBannerStyle.Error
+                                    )
+                                }
+                            }
+                        },
+                        enabled = !isLoading && !isRegisterCooldownActive,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
                         shape = RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (inWindow) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary
+                            containerColor = if (inWindow) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary,
+                            disabledContainerColor = if (inWindow) {
+                                Color(0xFF4CAF50).copy(alpha = 0.55f)
+                            } else {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+                            },
+                            disabledContentColor = Color.White.copy(alpha = 0.85f)
                         )
                     ) {
-                        if (isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = Color.White,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Text(
-                                text = "REGISTRAR TOMA",
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.titleSmall
-                            )
+                        when {
+                            isLoading -> {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                            }
+                            isRegisterCooldownActive -> {
+                                Text(
+                                    text = "Registrada…",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                            }
+                            else -> {
+                                Text(
+                                    text = "REGISTRAR TOMA",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                            }
                         }
                     }
 
@@ -277,7 +390,7 @@ fun MainFeedingScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             displayRecords.forEachIndexed { index, record ->
                                 key(record.id) {
-                                    SwipeToDismissRow(
+                                    SwipeToDismissFeedingRow(
                                         record = record,
                                         onDelete = { requestDelete(record) }
                                     ) {
@@ -294,15 +407,29 @@ fun MainFeedingScreen(
                             }
                         }
 
-                        if (visibleRecords.size > 8) {
-                            TextButton(
-                                onClick = { showFullHistory = !showFullHistory },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = if (showFullHistory) "ver menos..." else "ver más...",
-                                    style = MaterialTheme.typography.labelMedium
-                                )
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            if (visibleRecords.size > 8) {
+                                TextButton(
+                                    onClick = { showFullHistory = !showFullHistory },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = if (showFullHistory) "ver menos..." else "ver más...",
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                            }
+                            if (visibleRecords.isNotEmpty()) {
+                                OutlinedButton(
+                                    onClick = onOpenFullHistory,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Ver historial completo")
+                                }
                             }
                         }
                     }
@@ -326,6 +453,22 @@ fun MainFeedingScreen(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                 )
+            }
+        }
+
+            AnimatedVisibility(
+                visible = showingToast,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(top = 10.dp)
+                    .zIndex(10f),
+                enter = slideInVertically { -it } + fadeIn(
+                    animationSpec = spring(dampingRatio = 0.85f)
+                ),
+                exit = slideOutVertically { -it } + fadeOut(animationSpec = tween(250))
+            ) {
+                ToastBanner(text = toastText, style = toastStyle)
             }
         }
     }
@@ -373,62 +516,3 @@ fun MainFeedingScreen(
         }
     }
 }
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SwipeToDismissRow(
-    record: FeedingRecord,
-    onDelete: () -> Unit,
-    content: @Composable () -> Unit
-) {
-    var deleted by remember { mutableStateOf(false) }
-
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
-                deleted = true
-                onDelete()
-                true
-            } else false
-        }
-    )
-
-    // Immediately hide this composable after deletion so no red ghost bleeds into siblings
-    if (deleted) return
-
-    SwipeToDismissBox(
-        state = dismissState,
-        enableDismissFromStartToEnd = false,
-        backgroundContent = {
-            val isSwiping = dismissState.dismissDirection != null
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        color = if (isSwiping) Color(0xFFE53935) else Color.Transparent,
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    .padding(end = 16.dp),
-                contentAlignment = Alignment.CenterEnd
-            ) {
-                if (isSwiping) {
-                    Text(
-                        text = "🗑 Eliminar",
-                        color = Color.White,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-        },
-        content = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                content()
-            }
-        }
-    )
-}
-

@@ -7,7 +7,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
-import androidx.glance.GlanceTheme
 import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
@@ -30,6 +29,11 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
+
+private fun glanceColor(color: Color): ColorProvider =
+    object : ColorProvider {
+        override fun getColor(context: Context) = color
+    }
 
 class FeedingWidget : GlanceAppWidget() {
 
@@ -90,7 +94,7 @@ private fun WidgetContent(data: WidgetData) {
         Text(
             text = "🍼 ${data.babyName}",
             style = TextStyle(
-                color = ColorProvider(Color(0x8CFFFFFF)),
+                color = glanceColor(Color(0x8CFFFFFF)),
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Medium
             )
@@ -101,7 +105,7 @@ private fun WidgetContent(data: WidgetData) {
         Text(
             text = timeSinceText,
             style = TextStyle(
-                color = ColorProvider(Color.White),
+                color = glanceColor(Color.White),
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -110,7 +114,7 @@ private fun WidgetContent(data: WidgetData) {
         Text(
             text = "desde la última toma",
             style = TextStyle(
-                color = ColorProvider(Color(0x8CFFFFFF)),
+                color = glanceColor(Color(0x8CFFFFFF)),
                 fontSize = 10.sp
             )
         )
@@ -120,7 +124,7 @@ private fun WidgetContent(data: WidgetData) {
         Text(
             text = lastFeedingTimeText,
             style = TextStyle(
-                color = ColorProvider(Color(0x66FFFFFF)),
+                color = glanceColor(Color(0x66FFFFFF)),
                 fontSize = 10.sp
             )
         )
